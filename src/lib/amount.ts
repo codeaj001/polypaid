@@ -1,5 +1,5 @@
 /**
- * Amount Sanitization & Comma Formatting Utilities for PolyPay (USDC).
+ * Amount Sanitization & Comma Formatting Utilities for PolyPaid (USDC).
  */
 
 /**

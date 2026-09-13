@@ -25,7 +25,7 @@ export function TopNav() {
           <span className="flex h-7 w-7 items-center justify-center rounded-[8px] bg-blue text-white">
             <LogoMark className="h-4 w-4" />
           </span>
-          PolyPay
+          PolyPaid
         </Link>
 
         <nav className="hidden items-center gap-1 rounded-full border border-line bg-surface/80 p-1 shadow-soft md:flex">

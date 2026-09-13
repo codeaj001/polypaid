@@ -5,10 +5,20 @@ import { PaymentLink, Payment, CreateLinkInput, DashboardStats } from './types';
 import { generateSlug } from './slug';
 import { isEvmAddress } from '@/context/WalletContext';
 
-const LINKS_KEY = 'polypay:links';
-const PAYMENTS_KEY = 'polypay:payments';
+const LINKS_KEY = 'polypaid:links';
+const PAYMENTS_KEY = 'polypaid:payments';
 
 function ensureStorageInitialized() {
+  // Migrate legacy polypay storage keys if present
+  const legacyLinks = localStorage.getItem('polypay:links');
+  if (legacyLinks && !localStorage.getItem(LINKS_KEY)) {
+    localStorage.setItem(LINKS_KEY, legacyLinks);
+  }
+  const legacyPayments = localStorage.getItem('polypay:payments');
+  if (legacyPayments && !localStorage.getItem(PAYMENTS_KEY)) {
+    localStorage.setItem(PAYMENTS_KEY, legacyPayments);
+  }
+
   if (!localStorage.getItem(LINKS_KEY)) {
     localStorage.setItem(LINKS_KEY, JSON.stringify([]));
   } else {

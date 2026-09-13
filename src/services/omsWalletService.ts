@@ -1,17 +1,9 @@
-/**
- * Polygon Open Money Stack (OMS) Wallet Infrastructure Service.
- * Supports:
- *  1. Non-Custodial Wallets (EIP-7702 smart contract accounts with Email OTP / OIDC)
- *  2. Custodial Wallets (OMS-managed for compliance and fiat rails)
- *  3. Agentic Wallets (Scoped Smart Sessions for autonomous AI agents)
- */
-
-export type CustodyModel = 'non-custodial' | 'custodial' | 'agentic';
+import { POLYGON_MAINNET_PARAMS } from '@/context/WalletContext';
 
 export interface OmsUserSession {
   walletId: string;
   address: string;
-  email?: string;
+  email: string;
   custodyModel: CustodyModel;
   eip7702Enabled: boolean;
   createdAt: string;
@@ -28,8 +20,15 @@ export interface OmsSmartSession {
   status: 'active' | 'revoked' | 'expired';
 }
 
+export type CustodyModel = 'custodial' | 'non-custodial' | 'smart-session';
+
 const POLYGON_USDC_MAINNET = '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359';
 
+/**
+ * PolyPaid OMS Wallet Service
+ * Supports Email OTP logins creating non-custodial EIP-7702 smart contract accounts on Polygon,
+ * and Smart Sessions for autonomous AI agent authorizations.
+ */
 class OmsWalletService {
   private activeSessions: Map<string, OmsUserSession> = new Map();
   private smartSessions: Map<string, OmsSmartSession> = new Map();
@@ -38,12 +37,12 @@ class OmsWalletService {
     // Restore cached session if present in localStorage
     if (typeof localStorage !== 'undefined') {
       try {
-        const saved = localStorage.getItem('polypay_oms_session');
+        const saved = localStorage.getItem('polypaid_oms_session') || localStorage.getItem('polypay_oms_session');
         if (saved) {
           const parsed: OmsUserSession = JSON.parse(saved);
           this.activeSessions.set(parsed.walletId, parsed);
         }
-        const savedSmart = localStorage.getItem('polypay_oms_smart_sessions');
+        const savedSmart = localStorage.getItem('polypaid_oms_smart_sessions') || localStorage.getItem('polypay_oms_smart_sessions');
         if (savedSmart) {
           const parsedSmart: OmsSmartSession[] = JSON.parse(savedSmart);
           parsedSmart.forEach((s) => this.smartSessions.set(s.sessionId, s));
@@ -162,19 +161,20 @@ class OmsWalletService {
   public logout(): void {
     this.activeSessions.clear();
     if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('polypaid_oms_session');
       localStorage.removeItem('polypay_oms_session');
     }
   }
 
   private persistUserSession(session: OmsUserSession) {
     if (typeof localStorage !== 'undefined') {
-      localStorage.setItem('polypay_oms_session', JSON.stringify(session));
+      localStorage.setItem('polypaid_oms_session', JSON.stringify(session));
     }
   }
 
   private persistSmartSessions() {
     if (typeof localStorage !== 'undefined') {
-      localStorage.setItem('polypay_oms_smart_sessions', JSON.stringify(Array.from(this.smartSessions.values())));
+      localStorage.setItem('polypaid_oms_smart_sessions', JSON.stringify(Array.from(this.smartSessions.values())));
     }
   }
 }

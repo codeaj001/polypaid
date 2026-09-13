@@ -100,7 +100,7 @@ export function LinkForm() {
       <div>
         <PageHeader
           title="Create a payment link"
-          description="Fill this out once — PolyPay builds the shareable link and QR code, live."
+          description="Fill this out once — PolyPaid builds the shareable link and QR code, live."
           className="mb-8"
         />
 

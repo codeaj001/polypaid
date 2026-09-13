@@ -1,5 +1,5 @@
 /**
- * Data-access layer for PolyPay.
+ * Data-access layer for PolyPaid.
  */
 import { getSupabaseClient } from './supabase-client';
 import { generateSlug } from './slug';

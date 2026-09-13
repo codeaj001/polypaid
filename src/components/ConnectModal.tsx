@@ -280,7 +280,7 @@ export function ConnectModal({ isOpen, onClose }: ConnectModalProps) {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="alex@polypay.com"
+                  placeholder="alex@polypaid.com"
                   required
                   autoComplete="email"
                 />

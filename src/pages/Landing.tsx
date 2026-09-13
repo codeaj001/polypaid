@@ -22,7 +22,7 @@ export function Landing() {
         </h1>
 
         <p className="mt-6 max-w-lg text-lg leading-relaxed text-ink-soft">
-          PolyPay turns “just send me money” into a shareable payment link. You always receive clean
+          PolyPaid turns “just send me money” into a shareable payment link. You always receive clean
           USDC on Polygon.
         </p>
 
@@ -64,12 +64,12 @@ export function Landing() {
 
       <Section
         className="mt-24 pb-24"
-        title="How a PolyPay link works"
+        title="How a PolyPaid link works"
         description="Three steps from intent to settlement — designed to feel invisible."
       >
         <div className="grid gap-10 md:grid-cols-3">
           <Step n="1" title="Define the intent">
-            PolyPay creates a Trails payment intent — your address, amount, and USDC on Polygon as
+            PolyPaid creates a Trails payment intent — your address, amount, and USDC on Polygon as
             the destination.
           </Step>
           <Step n="2" active title="Solve the route">
@@ -84,7 +84,7 @@ export function Landing() {
       </Section>
 
       <footer className="border-t border-line py-8 text-center font-mono text-[11px] uppercase tracking-[0.08em] text-ink-faint">
-        PolyPay — shareable payment links, settled in USDC on Polygon
+        PolyPaid — shareable payment links, settled in USDC on Polygon
       </footer>
     </>
   );

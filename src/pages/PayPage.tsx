@@ -185,7 +185,7 @@ function Shell({
             <span className="flex h-3.5 w-3.5 items-center justify-center rounded bg-blue text-white">
               <LogoMark className="h-2 w-2" />
             </span>
-            polypay.link
+            polypaid.link
           </div>
           <div className="flex items-center gap-2">
             {onQrClick && (

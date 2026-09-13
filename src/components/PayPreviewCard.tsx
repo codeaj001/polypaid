@@ -29,7 +29,7 @@ export function PayPreviewCard({ handle, amount, memo, url }: PayPreviewCardProp
               <span className="flex h-[18px] w-[18px] items-center justify-center rounded-md bg-blue text-white">
                 <LogoMark className="h-2.5 w-2.5" />
               </span>
-              PolyPay
+              PolyPaid
             </div>
             <button
               type="button"

@@ -1,5 +1,5 @@
 {
-  "name": "polypay",
+  "name": "polypaid",
   "version": "0.1.0",
   "private": true,
   "description": "Shareable payment links that accept any token from any chain and settle as USDC on Polygon, powered by Trails. Plain React (Vite) SPA.",

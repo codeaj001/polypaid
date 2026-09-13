@@ -21,7 +21,7 @@ export function AgentSessionCard() {
               Agentic smart sessions
             </h3>
             <p className="text-xs text-ink-soft">
-              Scoped, on-chain permissions for autonomous AI agents paying PolyPay links.
+              Scoped, on-chain permissions for autonomous AI agents paying PolyPaid links.
             </p>
           </div>
         </div>

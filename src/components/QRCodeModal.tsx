@@ -37,7 +37,7 @@ export function QRCodeModal({ url, title = 'Pay via QR Code', isOpen, onClose }:
     if (!qrDataUrl) return;
     const link = document.createElement('a');
     link.href = qrDataUrl;
-    link.download = `polypay-qr-${Date.now()}.png`;
+    link.download = `polypaid-qr-${Date.now()}.png`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
