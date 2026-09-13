@@ -132,7 +132,7 @@ export function LinkForm() {
             <Input
               label="Invoice / memo ref"
               type="text"
-              placeholder="e.g., INV-001"
+              placeholder="e.g., Polygon airdrop"
               value={invoiceRef}
               onChange={(e) => setInvoiceRef(e.target.value)}
             />
@@ -206,8 +206,8 @@ export function LinkForm() {
               !isConnected || !isEvm
                 ? () => setShowConnectModal(true)
                 : !isPolygon
-                ? switchToPolygon
-                : undefined
+                  ? switchToPolygon
+                  : undefined
             }
             fullWidth
             size="lg"
@@ -217,12 +217,12 @@ export function LinkForm() {
             {submitting
               ? 'Generating…'
               : !isConnected
-              ? 'Connect wallet to generate link'
-              : !isEvm
-              ? 'Connect Polygon EVM wallet'
-              : !isPolygon
-              ? 'Switch to Polygon to generate link'
-              : 'Generate link & QR'}
+                ? 'Connect wallet to generate link'
+                : !isEvm
+                  ? 'Connect Polygon EVM wallet'
+                  : !isPolygon
+                    ? 'Switch to Polygon to generate link'
+                    : 'Generate link & QR'}
           </Button>
         </form>
 

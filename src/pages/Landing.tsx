@@ -49,11 +49,11 @@ export function Landing() {
 
       <Section className="mt-20 grid gap-4 md:grid-cols-3">
         <FeatureCard num="01" title="Create in 30 seconds">
-          Set an amount, add a memo, choose USDC on Polygon as your settlement asset, and get a link
+          Set an amount, add a memo and get a link
           instantly. No contracts, no code.
         </FeatureCard>
         <FeatureCard num="02" title="They pay with anything">
-          Your customer connects any wallet and pays with any token on any EVM chain. Trails finds
+          Your customer connects any wallet and pays with any token on any supported chain. Trails finds
           the optimal route automatically.
         </FeatureCard>
         <FeatureCard num="03" title="You get clean USDC">
@@ -114,9 +114,8 @@ function Step({
   return (
     <div>
       <div
-        className={`mb-5 flex h-10 w-10 items-center justify-center rounded-full border text-[13px] font-semibold ${
-          active ? 'border-blue bg-blue text-white' : 'border-ink text-ink'
-        }`}
+        className={`mb-5 flex h-10 w-10 items-center justify-center rounded-full border text-[13px] font-semibold ${active ? 'border-blue bg-blue text-white' : 'border-ink text-ink'
+          }`}
       >
         {n}
       </div>
