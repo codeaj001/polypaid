@@ -1,6 +1,7 @@
 import { useState, useEffect, FormEvent } from 'react';
 import { useWallet } from '@/context/WalletContext';
 import { KNOWN_WALLETS, WalletInfo, EIP6963ProviderDetail } from '@/lib/walletDiscovery';
+import { isMobile, isInAppBrowser, getWalletDeepLink } from '@/lib/mobile';
 import { Badge, Button, Input, Modal } from '@/components/ui';
 import clsx from 'clsx';
 
@@ -26,6 +27,8 @@ export function ConnectModal({ isOpen, onClose }: ConnectModalProps) {
   const [dailyLimit, setDailyLimit] = useState<number>(100);
   const [expiryDays, setExpiryDays] = useState<number>(30);
   const [agentCreated, setAgentCreated] = useState(false);
+
+  const onMobileDevice = isMobile();
 
   useEffect(() => {
     if (!isOpen) return;
@@ -148,7 +151,7 @@ export function ConnectModal({ isOpen, onClose }: ConnectModalProps) {
   const uninstalledWallets = wallets.filter((w) => !w.isInstalled);
 
   const tabs: { id: TabType; label: string }[] = [
-    { id: 'browser', label: 'Wallets' },
+    { id: 'browser', label: onMobileDevice ? 'Mobile Apps' : 'Wallets' },
     { id: 'oms-email', label: 'Email OTP' },
     { id: 'oms-agent', label: 'Smart Session' },
   ];
@@ -158,7 +161,7 @@ export function ConnectModal({ isOpen, onClose }: ConnectModalProps) {
       isOpen={isOpen}
       onClose={onClose}
       title="Connect wallet"
-      description="Select a wallet or connect via Polygon OMS"
+      description={onMobileDevice ? 'Open in mobile app or connect via Email OTP' : 'Select a wallet or connect via Polygon OMS'}
       size="md"
       className="max-w-[420px]"
     >
@@ -192,7 +195,7 @@ export function ConnectModal({ isOpen, onClose }: ConnectModalProps) {
           <div className="space-y-4">
             {installedWallets.length > 0 ? (
               <div className="space-y-1.5">
-                <div className="label-caps mb-1.5 text-[10.5px]">Installed Wallets</div>
+                <div className="label-caps mb-1.5 text-[10.5px]">Detected Wallets</div>
                 {installedWallets.map((w) => (
                   <button
                     key={w.id}
@@ -222,49 +225,58 @@ export function ConnectModal({ isOpen, onClose }: ConnectModalProps) {
                 ))}
               </div>
             ) : (
-              <button
-                type="button"
-                onClick={() => handleWalletConnect()}
-                disabled={loading}
-                className="group flex w-full items-center justify-between rounded-2xl border border-line p-3 transition-colors duration-200 hover:bg-paper"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-blue-dim text-[11px] font-semibold text-blue">
-                    W3
+              !onMobileDevice && (
+                <button
+                  type="button"
+                  onClick={() => handleWalletConnect()}
+                  disabled={loading}
+                  className="group flex w-full items-center justify-between rounded-2xl border border-line p-3 transition-colors duration-200 hover:bg-paper"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-blue-dim text-[11px] font-semibold text-blue">
+                      W3
+                    </div>
+                    <span className="text-sm font-medium text-ink group-hover:text-blue">Web3 Extension Provider</span>
                   </div>
-                  <span className="text-sm font-medium text-ink group-hover:text-blue">Web3 Extension Provider</span>
-                </div>
-                <span className="text-xs font-semibold text-blue opacity-0 transition-opacity group-hover:opacity-100">
-                  Connect →
-                </span>
-              </button>
+                  <span className="text-xs font-semibold text-blue opacity-0 transition-opacity group-hover:opacity-100">
+                    Connect →
+                  </span>
+                </button>
+              )
             )}
 
             {uninstalledWallets.length > 0 && (
               <div className="border-t border-line pt-3">
-                <div className="label-caps mb-2 text-[10.5px]">More Wallets</div>
+                <div className="label-caps mb-2 text-[10.5px]">
+                  {onMobileDevice ? 'Mobile Apps & Universal Links' : 'More Wallets'}
+                </div>
                 <div className="space-y-1.5">
-                  {uninstalledWallets.map((w) => (
-                    <a
-                      key={w.id}
-                      href={w.installUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="group flex items-center justify-between rounded-xl border border-line/60 bg-paper/40 px-3 py-2 text-xs text-ink-soft transition-colors duration-200 hover:border-blue/30 hover:bg-blue-dim/20 hover:text-ink"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border border-line bg-surface text-[10px] font-semibold text-ink-soft shadow-soft">
-                          {typeof w.icon === 'string' && !w.icon.startsWith('data:') && !w.icon.startsWith('http')
-                            ? w.icon.slice(0, 2)
-                            : 'W'}
+                  {uninstalledWallets.map((w) => {
+                    const deepLink = getWalletDeepLink(w.id);
+                    return (
+                      <a
+                        key={w.id}
+                        href={onMobileDevice ? deepLink : w.installUrl}
+                        target={onMobileDevice ? '_self' : '_blank'}
+                        rel="noopener noreferrer"
+                        className="group flex items-center justify-between rounded-xl border border-line/60 bg-paper/40 px-3 py-2.5 text-xs text-ink-soft transition-colors duration-200 hover:border-blue/30 hover:bg-blue-dim/20 hover:text-ink"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border border-line bg-surface text-[10px] font-semibold text-ink-soft shadow-soft">
+                            {typeof w.icon === 'string' && (w.icon.startsWith('data:') || w.icon.startsWith('http')) ? (
+                              <img src={w.icon} alt="" className="h-3.5 w-3.5 object-contain" />
+                            ) : (
+                              'W'
+                            )}
+                          </span>
+                          <span className="font-medium text-ink truncate">{w.name}</span>
+                        </div>
+                        <span className="shrink-0 font-mono text-[10.5px] font-medium text-blue group-hover:underline">
+                          {onMobileDevice ? 'Open App ↗' : 'Install ↗'}
                         </span>
-                        <span className="font-medium text-ink truncate">{w.name}</span>
-                      </div>
-                      <span className="shrink-0 font-mono text-[10.5px] font-medium text-blue group-hover:underline">
-                        Install ↗
-                      </span>
-                    </a>
-                  ))}
+                      </a>
+                    );
+                  })}
                 </div>
               </div>
             )}
