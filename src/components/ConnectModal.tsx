@@ -192,94 +192,65 @@ export function ConnectModal({ isOpen, onClose }: ConnectModalProps) {
 
       <div className="space-y-4">
         {activeTab === 'browser' && (
-          <div className="space-y-4">
-            {installedWallets.length > 0 ? (
-              <div className="space-y-1.5">
-                <div className="label-caps mb-1.5 text-[10.5px]">Detected Wallets</div>
-                {installedWallets.map((w) => (
+          <div className="space-y-3">
+            {onMobileDevice && (
+              <div className="rounded-xl border border-blue-mid/40 bg-blue-dim/50 px-3.5 py-2.5 text-xs text-blue">
+                Tap any wallet below to open it on your mobile device, or use <b>Email OTP</b> for 1-tap web login.
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <div className="label-caps mb-1.5 text-[10.5px]">
+                {onMobileDevice ? 'Select Mobile Wallet' : 'Detected & Supported Wallets'}
+              </div>
+
+              {wallets.map((w) => {
+                const deepLink = getWalletDeepLink(w.id);
+                const isDetected = w.isInstalled;
+
+                return (
                   <button
                     key={w.id}
                     type="button"
-                    onClick={() => handleWalletConnect(w.provider)}
+                    onClick={() => {
+                      if (isDetected && w.provider) {
+                        handleWalletConnect(w.provider);
+                      } else if (onMobileDevice) {
+                        window.location.href = deepLink;
+                      } else {
+                        window.open(w.installUrl, '_blank', 'noopener,noreferrer');
+                      }
+                    }}
                     disabled={loading}
-                    className="group flex w-full cursor-pointer items-center justify-between rounded-2xl border border-line/80 bg-paper/60 p-3 transition-colors duration-200 hover:border-blue hover:bg-blue-dim/40"
+                    className="group flex w-full cursor-pointer items-center justify-between rounded-2xl border border-line/80 bg-paper/60 p-3 transition-all duration-200 hover:border-blue hover:bg-blue-dim/40 active:scale-[0.99]"
                   >
                     <div className="flex items-center gap-3">
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-line bg-surface text-sm shadow-soft">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-line bg-surface shadow-soft">
                         {w.icon.startsWith('data:') || w.icon.startsWith('http') ? (
-                          <img src={w.icon} alt="" className="h-4 w-4 object-contain" />
+                          <img src={w.icon} alt="" className="h-4.5 w-4.5 object-contain" />
                         ) : (
-                          <span className="text-[10px] font-semibold tracking-tight text-ink">
+                          <span className="text-[11px] font-semibold tracking-tight text-ink">
                             {w.icon.slice(0, 2)}
                           </span>
                         )}
                       </div>
-                      <span className="text-sm font-semibold text-ink transition-colors group-hover:text-blue">
-                        {w.name}
-                      </span>
+                      <div className="text-left">
+                        <div className="text-sm font-semibold text-ink transition-colors group-hover:text-blue">
+                          {w.name}
+                        </div>
+                        {onMobileDevice && !isDetected && (
+                          <div className="text-[11px] text-ink-soft">Tap to launch app</div>
+                        )}
+                      </div>
                     </div>
-                    <span className="flex items-center gap-1 text-xs font-semibold text-blue opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-                      Connect →
+
+                    <span className="flex items-center gap-1 font-mono text-xs font-semibold text-blue opacity-90 transition-opacity duration-200 group-hover:opacity-100">
+                      {isDetected ? 'Connect →' : onMobileDevice ? 'Open App ↗' : 'Install ↗'}
                     </span>
                   </button>
-                ))}
-              </div>
-            ) : (
-              !onMobileDevice && (
-                <button
-                  type="button"
-                  onClick={() => handleWalletConnect()}
-                  disabled={loading}
-                  className="group flex w-full items-center justify-between rounded-2xl border border-line p-3 transition-colors duration-200 hover:bg-paper"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-blue-dim text-[11px] font-semibold text-blue">
-                      W3
-                    </div>
-                    <span className="text-sm font-medium text-ink group-hover:text-blue">Web3 Extension Provider</span>
-                  </div>
-                  <span className="text-xs font-semibold text-blue opacity-0 transition-opacity group-hover:opacity-100">
-                    Connect →
-                  </span>
-                </button>
-              )
-            )}
-
-            {uninstalledWallets.length > 0 && (
-              <div className="border-t border-line pt-3">
-                <div className="label-caps mb-2 text-[10.5px]">
-                  {onMobileDevice ? 'Mobile Apps & Universal Links' : 'More Wallets'}
-                </div>
-                <div className="space-y-1.5">
-                  {uninstalledWallets.map((w) => {
-                    const deepLink = getWalletDeepLink(w.id);
-                    return (
-                      <a
-                        key={w.id}
-                        href={onMobileDevice ? deepLink : w.installUrl}
-                        target={onMobileDevice ? '_self' : '_blank'}
-                        rel="noopener noreferrer"
-                        className="group flex items-center justify-between rounded-xl border border-line/60 bg-paper/40 px-3 py-2.5 text-xs text-ink-soft transition-colors duration-200 hover:border-blue/30 hover:bg-blue-dim/20 hover:text-ink"
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border border-line bg-surface text-[10px] font-semibold text-ink-soft shadow-soft">
-                            {typeof w.icon === 'string' && (w.icon.startsWith('data:') || w.icon.startsWith('http')) ? (
-                              <img src={w.icon} alt="" className="h-3.5 w-3.5 object-contain" />
-                            ) : (
-                              'W'
-                            )}
-                          </span>
-                          <span className="font-medium text-ink truncate">{w.name}</span>
-                        </div>
-                        <span className="shrink-0 font-mono text-[10.5px] font-medium text-blue group-hover:underline">
-                          {onMobileDevice ? 'Open App ↗' : 'Install ↗'}
-                        </span>
-                      </a>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
+                );
+              })}
+            </div>
           </div>
         )}
 
