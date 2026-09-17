@@ -16,9 +16,7 @@ export function Landing() {
         <h1 className="text-display max-w-3xl text-ink">
           Get paid in USDC.
           <br />
-          From <span className="text-blue">any token.</span> Any chain.
-          <br />
-          One link.
+          From <span className="text-blue">anywhere.</span>
         </h1>
 
         <p className="mt-6 max-w-lg text-lg leading-relaxed text-ink-soft">
