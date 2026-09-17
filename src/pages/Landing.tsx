@@ -38,8 +38,6 @@ export function Landing() {
           <span>1,000+ tokens supported</span>
           <span className="hidden h-3 w-px bg-line sm:block" />
           <span>Solana · Ethereum · Base · Arbitrum · Optimism · Avalanche · BNB Chain</span>
-          <span className="hidden h-3 w-px bg-line sm:block" />
-          <span>Audited by Quantstamp</span>
         </div>
 
         <RouteDiagram />
