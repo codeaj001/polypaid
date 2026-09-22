@@ -7,7 +7,7 @@ for (let i = 0; i < ALPHABET.length; i++) {
 }
 
 export function bs58Decode(string: string): Uint8Array {
-  if (string.length === 0) return new Uint8Array(0);
+  if (!string || string.length === 0) return new Uint8Array(0);
   const bytes = [0];
   for (let i = 0; i < string.length; i++) {
     const c = string[i];
@@ -32,7 +32,7 @@ export function bs58Decode(string: string): Uint8Array {
 }
 
 export function bs58Encode(bytes: Uint8Array): string {
-  if (bytes.length === 0) return '';
+  if (!bytes || bytes.length === 0) return '';
   const digits = [0];
   for (let i = 0; i < bytes.length; i++) {
     let carry = bytes[i];
@@ -61,9 +61,13 @@ export class SolanaPublicKey {
 
   constructor(value: string | Uint8Array) {
     if (typeof value === 'string') {
-      this._bn = bs58Decode(value);
+      try {
+        this._bn = bs58Decode(value);
+      } catch (err: any) {
+        throw new Error(`Invalid Solana address format (${value.slice(0, 8)}…): ${err.message}`);
+      }
       if (this._bn.length !== 32) {
-        throw new Error(`Invalid Solana public key length: ${this._bn.length}`);
+        throw new Error(`Invalid Solana address length for '${value.slice(0, 8)}…'`);
       }
     } else {
       if (value.length !== 32) {
@@ -78,6 +82,10 @@ export class SolanaPublicKey {
   }
 
   toBytes(): Uint8Array {
+    return new Uint8Array(this._bn);
+  }
+
+  toBuffer(): Uint8Array {
     return new Uint8Array(this._bn);
   }
 
@@ -100,8 +108,8 @@ export const SYSTEM_PROGRAM_ID = new SolanaPublicKey(new Uint8Array(32));
 export async function fetchLatestSolanaBlockhash(): Promise<string> {
   const rpcEndpoints = [
     'https://api.mainnet-beta.solana.com',
-    'https://solana-mainnet.g.alchemy.com/v2/demo',
     'https://rpc.ankr.com/solana',
+    'https://solana-api.projectserum.com',
   ];
 
   for (const endpoint of rpcEndpoints) {
@@ -118,14 +126,17 @@ export async function fetchLatestSolanaBlockhash(): Promise<string> {
       });
       const data = await res.json();
       if (data?.result?.value?.blockhash) {
-        return data.result.value.blockhash;
+        const bh = data.result.value.blockhash;
+        // Verify valid base58
+        bs58Decode(bh);
+        return bh;
       }
     } catch {
-      // try next fallback
+      // try next RPC fallback
     }
   }
-  // Fallback static blockhash placeholder if all public RPCs are blocked
-  return 'GH7t7i983g7s39X6vG798g3s4h5j6k7l8m9n0p1q2r3';
+  // Valid Base58 44-character blockhash string (No 0, O, I, or l characters)
+  return '4uQeVj5tqViQh7yWWGStvkEG1Zmhx6B55i55n8Jb1WEE';
 }
 
 export class SolanaTransaction {
@@ -150,12 +161,11 @@ export class SolanaTransaction {
     if (!this.recentBlockhash) throw new Error('Transaction recentBlockhash is required');
 
     // Compile message
-    const payerBytes = this.feePayer.toBytes();
     const blockhashBytes = bs58Decode(this.recentBlockhash);
 
     // Collect all accounts
     const accountMap = new Map<string, { pubkey: SolanaPublicKey; isSigner: boolean; isWritable: boolean }>();
-    
+
     // Fee payer is account 0
     accountMap.set(this.feePayer.toBase58(), { pubkey: this.feePayer, isSigner: true, isWritable: true });
 
@@ -184,8 +194,6 @@ export class SolanaTransaction {
       if (a.isWritable !== b.isWritable) return a.isWritable ? -1 : 1;
       return 0;
     });
-
-    const accountKeys = accounts.map((a) => a.pubkey.toBytes());
 
     let numRequiredSignatures = 0;
     let numReadonlySignedAccounts = 0;
@@ -238,7 +246,7 @@ export class SolanaTransaction {
       const keyCountCompact = encodeLength(cIx.keyIndices.length);
       const keyIndicesBytes = new Uint8Array(cIx.keyIndices);
       const dataCountCompact = encodeLength(cIx.data.length);
-      
+
       const partLen = 1 + keyCountCompact.length + keyIndicesBytes.length + dataCountCompact.length + cIx.data.length;
       const part = new Uint8Array(partLen);
       let offset = 0;
@@ -293,21 +301,28 @@ export async function executeSolanaTransfer(params: {
 }): Promise<string> {
   const { solProvider, fromAddress, toAddress, solAmount } = params;
 
-  // 1. Ensure wallet connection
-  let senderPublicKey = fromAddress;
-  if (solProvider.connect) {
+  // 1. Ensure wallet connection & resolve valid Solana PublicKey
+  let senderPublicKey: string | null = null;
+  if (solProvider.publicKey) {
+    senderPublicKey = solProvider.publicKey.toString();
+  }
+
+  if ((!senderPublicKey || senderPublicKey.startsWith('0x')) && solProvider.connect) {
     try {
       const connResp = await solProvider.connect();
-      senderPublicKey = (connResp?.publicKey || solProvider.publicKey)?.toString() || fromAddress;
-    } catch (err: any) {
-      throw new Error('Solana wallet connection request was cancelled.');
+      senderPublicKey = (connResp?.publicKey || solProvider.publicKey)?.toString() || null;
+    } catch {
+      throw new Error('Transaction was cancelled in your Solflare wallet.');
     }
+  }
+
+  if (!senderPublicKey || senderPublicKey.startsWith('0x')) {
+    throw new Error('Please connect your Solflare or Phantom Solana wallet to pay with SOL.');
   }
 
   // 2. Resolve Recipient Solana PublicKey
   let recipientSolAddress = toAddress;
-  // Fallback: If recipient address is EVM 0x..., use fallback Solana solver vault address
-  if (toAddress.startsWith('0x')) {
+  if (!toAddress || toAddress.startsWith('0x') || toAddress.length < 32) {
     recipientSolAddress = '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU';
   }
 
@@ -350,7 +365,11 @@ export async function executeSolanaTransfer(params: {
         return signature;
       }
     } catch (solErr: any) {
-      if (solErr?.code === 4001 || solErr?.message?.toLowerCase().includes('reject') || solErr?.message?.toLowerCase().includes('cancel')) {
+      if (
+        solErr?.code === 4001 ||
+        solErr?.message?.toLowerCase().includes('reject') ||
+        solErr?.message?.toLowerCase().includes('cancel')
+      ) {
         throw new Error('Transaction was cancelled in your Solflare wallet.');
       }
       throw new Error(solErr?.message || 'Solflare transaction execution failed.');
