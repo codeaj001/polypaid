@@ -37,81 +37,120 @@ export async function createLink(input: CreateLinkInput): Promise<PaymentLink> {
   if (!sb) return local.localCreateLink(input);
 
   const slug = generateSlug(input.memo, input.creatorHandle);
-  const { data, error } = await sb
-    .from('payment_links')
-    .insert({
-      slug,
-      recipient_address: recipientAddress,
-      amount: input.amount,
-      memo: input.memo,
-      invoice_ref: input.invoiceRef ?? null,
-      redirect_url: input.redirectUrl ?? null,
-      expires_at: input.expiresInDays ? new Date(Date.now() + input.expiresInDays * 86400000).toISOString() : null,
-    })
-    .select()
-    .single();
+  try {
+    const { data, error } = await sb
+      .from('payment_links')
+      .insert({
+        slug,
+        recipient_address: recipientAddress,
+        amount: input.amount,
+        memo: input.memo,
+        invoice_ref: input.invoiceRef ?? null,
+        redirect_url: input.redirectUrl ?? null,
+        expires_at: input.expiresInDays ? new Date(Date.now() + input.expiresInDays * 86400000).toISOString() : null,
+      })
+      .select()
+      .single();
 
-  if (error) throw new Error(error.message);
-  return rowToLink(data);
+    if (error) {
+      console.warn('Supabase insert error, falling back to local store:', error.message);
+      return local.localCreateLink(input);
+    }
+    return rowToLink(data);
+  } catch (err: any) {
+    console.warn('Supabase createLink failed (network/CORS error), falling back to local store:', err);
+    return local.localCreateLink(input);
+  }
 }
 
 export async function getLinkBySlug(slug: string): Promise<PaymentLink | null> {
   const sb = getSupabaseClient();
   if (!sb) return local.localGetLinkBySlug(slug);
 
-  const { data } = await sb.from('payment_links').select('*').eq('slug', slug).single();
-  if (!data) return null;
-  return rowToLink(data);
+  try {
+    const { data, error } = await sb.from('payment_links').select('*').eq('slug', slug).single();
+    if (error || !data) return local.localGetLinkBySlug(slug);
+    return rowToLink(data);
+  } catch (err) {
+    console.warn('Supabase getLinkBySlug failed, falling back to local store:', err);
+    return local.localGetLinkBySlug(slug);
+  }
 }
 
 export async function listLinks(userAddress?: string | null): Promise<PaymentLink[]> {
   const sb = getSupabaseClient();
   if (!sb) return local.localListLinks(userAddress);
 
-  let query = sb.from('payment_links').select('*');
-  if (userAddress) {
-    query = query.ilike('recipient_address', userAddress);
+  try {
+    let query = sb.from('payment_links').select('*');
+    if (userAddress) {
+      query = query.ilike('recipient_address', userAddress);
+    }
+    const { data, error } = await query.order('created_at', { ascending: false });
+    if (error || !data) return local.localListLinks(userAddress);
+
+    // Merge remote database links with any locally created links
+    const localLinks = await local.localListLinks(userAddress);
+    const combined = data.map(rowToLink);
+    localLinks.forEach((l) => {
+      if (!combined.some((c) => c.slug === l.slug || c.id === l.id)) {
+        combined.push(l);
+      }
+    });
+    return combined;
+  } catch (err) {
+    console.warn('Supabase listLinks failed, falling back to local store:', err);
+    return local.localListLinks(userAddress);
   }
-  const { data } = await query.order('created_at', { ascending: false });
-  return (data ?? []).map(rowToLink);
 }
 
 export async function recordAttempt(linkId: string, payerAddress: string, trailsIntentId: string): Promise<Payment | null> {
   const sb = getSupabaseClient();
   if (!sb) return local.localRecordAttempt(linkId, payerAddress, trailsIntentId);
 
-  const { data, error } = await sb
-    .from('payments')
-    .insert({ link_id: linkId, payer_address: payerAddress, trails_intent_id: trailsIntentId })
-    .select()
-    .single();
-  if (error) throw new Error(error.message);
-  return data as unknown as Payment;
+  try {
+    const { data, error } = await sb
+      .from('payments')
+      .insert({ link_id: linkId, payer_address: payerAddress, trails_intent_id: trailsIntentId })
+      .select()
+      .single();
+    if (error) {
+      console.warn('Supabase recordAttempt error, using local fallback:', error.message);
+      return local.localRecordAttempt(linkId, payerAddress, trailsIntentId);
+    }
+    return data as unknown as Payment;
+  } catch (err) {
+    console.warn('Supabase recordAttempt failed, using local fallback:', err);
+    return local.localRecordAttempt(linkId, payerAddress, trailsIntentId);
+  }
 }
 
 export async function markPaidByIntentOptimistic(intentId: string, destTxHash: string, routeSummary: unknown): Promise<void> {
   const sb = getSupabaseClient();
   if (!sb) return local.localMarkPaidByIntent(intentId, destTxHash, routeSummary);
 
-  // Try executing the RPC function first (bypasses RLS limits, updates link status atomically)
-  const { error } = await sb.rpc('confirm_payment_intent', {
-    p_intent_id: intentId,
-    p_tx_hash: destTxHash,
-    p_route_summary: routeSummary,
-  });
+  try {
+    const { error } = await sb.rpc('confirm_payment_intent', {
+      p_intent_id: intentId,
+      p_tx_hash: destTxHash,
+      p_route_summary: routeSummary,
+    });
 
-  if (error) {
-    // Fallback direct table update if RPC function hasn't been executed yet
-    const { data: payment } = await sb
-      .from('payments')
-      .update({ status: 'confirmed', tx_hash_dest: destTxHash, route_summary: routeSummary, confirmed_at: new Date().toISOString() })
-      .eq('trails_intent_id', intentId)
-      .select('link_id')
-      .maybeSingle();
+    if (error) {
+      const { data: payment } = await sb
+        .from('payments')
+        .update({ status: 'confirmed', tx_hash_dest: destTxHash, route_summary: routeSummary, confirmed_at: new Date().toISOString() })
+        .eq('trails_intent_id', intentId)
+        .select('link_id')
+        .maybeSingle();
 
-    if (payment?.link_id) {
-      await sb.from('payment_links').update({ status: 'paid' }).eq('id', payment.link_id);
+      if (payment?.link_id) {
+        await sb.from('payment_links').update({ status: 'paid' }).eq('id', payment.link_id);
+      }
     }
+  } catch (err) {
+    console.warn('Supabase markPaidByIntentOptimistic failed, using local fallback:', err);
+    await local.localMarkPaidByIntent(intentId, destTxHash, routeSummary);
   }
 }
 
@@ -119,28 +158,36 @@ export async function getStats(userAddress?: string | null): Promise<DashboardSt
   const sb = getSupabaseClient();
   if (!sb) return local.localGetStats(userAddress);
 
-  let query = sb.from('payment_links').select('id, amount, status, recipient_address');
-  if (userAddress) {
-    query = query.ilike('recipient_address', userAddress);
-  }
-  const { data: links } = await query;
-  const { data: payments } = await sb.from('payments').select('status, link_id');
-  const linkRows = links ?? [];
-  const paymentRows = payments ?? [];
-  const confirmed = paymentRows.filter((p: any) => p.status === 'confirmed');
-  const totalReceivedUsd = confirmed.reduce((sum: number, p: any) => {
-    const link = linkRows.find((l: any) => l.id === p.link_id);
-    return sum + Number(link?.amount ?? 0);
-  }, 0);
+  try {
+    let query = sb.from('payment_links').select('id, amount, status, recipient_address');
+    if (userAddress) {
+      query = query.ilike('recipient_address', userAddress);
+    }
+    const { data: links, error: lErr } = await query;
+    const { data: payments, error: pErr } = await sb.from('payments').select('status, link_id');
 
-  return {
-    totalReceivedUsd,
-    activeLinks: linkRows.filter((l: any) => l.status === 'open').length,
-    conversionRate: linkRows.length
-      ? Math.round((linkRows.filter((l: any) => l.status === 'paid').length / linkRows.length) * 100)
-      : 0,
-    avgSettleSeconds: 0,
-  };
+    if (lErr || pErr || !links) return local.localGetStats(userAddress);
+
+    const linkRows = links ?? [];
+    const paymentRows = payments ?? [];
+    const confirmed = paymentRows.filter((p: any) => p.status === 'confirmed');
+    const totalReceivedUsd = confirmed.reduce((sum: number, p: any) => {
+      const link = linkRows.find((l: any) => l.id === p.link_id);
+      return sum + Number(link?.amount ?? 0);
+    }, 0);
+
+    return {
+      totalReceivedUsd,
+      activeLinks: linkRows.filter((l: any) => l.status === 'open').length,
+      conversionRate: linkRows.length
+        ? Math.round((linkRows.filter((l: any) => l.status === 'paid').length / linkRows.length) * 100)
+        : 0,
+      avgSettleSeconds: 0,
+    };
+  } catch (err) {
+    console.warn('Supabase getStats failed, using local fallback:', err);
+    return local.localGetStats(userAddress);
+  }
 }
 
 export function isUsingLocalStore(): boolean {

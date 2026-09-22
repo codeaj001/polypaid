@@ -13,7 +13,7 @@ import {
   PageHeader,
 } from '@/components/ui';
 
-import { formatWithCommas } from '@/lib/amount';
+import { formatWithCommas, formatUserFriendlyError } from '@/lib/amount';
 
 export function LinkForm() {
   const { address, isConnected, chainId, switchToPolygon } = useWallet();
@@ -82,7 +82,7 @@ export function LinkForm() {
       setCreatedUrl(generatedUrl);
       setShowQrModal(true);
     } catch (err: any) {
-      setError(err.message ?? 'Something went wrong');
+      setError(formatUserFriendlyError(err));
     } finally {
       setSubmitting(false);
     }

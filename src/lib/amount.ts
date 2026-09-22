@@ -83,3 +83,26 @@ export function formatAmountDisplay(val: string | number): string {
   }
   return formatWithCommas(val);
 }
+
+/**
+ * Formats technical or raw JavaScript network errors into clean, user-friendly messages.
+ */
+export function formatUserFriendlyError(err: any): string {
+  if (!err) return 'An unexpected error occurred. Please try again.';
+  const msg = typeof err === 'string' ? err : err?.message || err?.error_description || 'Something went wrong';
+
+  if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('TypeError')) {
+    return 'Network connection issue. Please check your internet connection or try again.';
+  }
+  if (msg.includes('row-level security') || msg.includes('RLS')) {
+    return 'Permission restriction. Please refresh the page and reconnect your wallet.';
+  }
+  if (msg.includes('duplicate key') || msg.includes('unique constraint')) {
+    return 'A payment link with this reference already exists. Please adjust the memo or invoice reference.';
+  }
+  if (msg.includes('user rejected') || msg.includes('User denied') || msg.includes('cancelled')) {
+    return 'Action was cancelled in your wallet.';
+  }
+
+  return msg;
+}
