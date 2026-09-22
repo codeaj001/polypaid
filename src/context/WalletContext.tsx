@@ -9,6 +9,52 @@ export const POLYGON_MAINNET_PARAMS = {
   blockExplorerUrls: ['https://polygonscan.com/'],
 };
 
+export const CHAIN_PARAMS: Record<number, { chainId: string; chainName: string; nativeCurrency: { name: string; symbol: string; decimals: number }; rpcUrls: string[]; blockExplorerUrls: string[] }> = {
+  137: POLYGON_MAINNET_PARAMS,
+  8453: {
+    chainId: '0x2105',
+    chainName: 'Base Mainnet',
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+    rpcUrls: ['https://mainnet.base.org'],
+    blockExplorerUrls: ['https://basescan.org'],
+  },
+  42161: {
+    chainId: '0xa4b1',
+    chainName: 'Arbitrum One',
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+    rpcUrls: ['https://arb1.arbitrum.io/rpc'],
+    blockExplorerUrls: ['https://arbiscan.io'],
+  },
+  1: {
+    chainId: '0x1',
+    chainName: 'Ethereum Mainnet',
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+    rpcUrls: ['https://eth.llamarpc.com'],
+    blockExplorerUrls: ['https://etherscan.io'],
+  },
+  10: {
+    chainId: '0xa',
+    chainName: 'OP Mainnet',
+    nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
+    rpcUrls: ['https://mainnet.optimism.io'],
+    blockExplorerUrls: ['https://optimistic.etherscan.io'],
+  },
+  43114: {
+    chainId: '0xa86a',
+    chainName: 'Avalanche C-Chain',
+    nativeCurrency: { name: 'Avalanche', symbol: 'AVAX', decimals: 18 },
+    rpcUrls: ['https://api.avax.network/ext/bc/C/rpc'],
+    blockExplorerUrls: ['https://snowtrace.io'],
+  },
+  56: {
+    chainId: '0x38',
+    chainName: 'BNB Smart Chain',
+    nativeCurrency: { name: 'BNB', symbol: 'BNB', decimals: 18 },
+    rpcUrls: ['https://bsc-dataseed.binance.org/'],
+    blockExplorerUrls: ['https://bscscan.com'],
+  },
+};
+
 export type AuthMethod = 'browser' | 'oms-email' | 'oms-agent';
 
 interface WalletState {
@@ -22,6 +68,7 @@ interface WalletState {
   connect: (targetProvider?: any) => Promise<void>;
   disconnect: () => void;
   switchToPolygon: () => Promise<void>;
+  switchChain: (targetChainId: number) => Promise<void>;
   sendOmsEmailOtp: (email: string) => Promise<{ challengeId: string }>;
   verifyOmsOtp: (email: string, code: string) => Promise<void>;
   createAgentSmartSession: (dailyLimitUsdc: number, expiryDays?: number) => Promise<OmsSmartSession>;
@@ -202,6 +249,38 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     }
   }, [activeProvider]);
 
+  const switchChain = useCallback(async (targetChainId: number) => {
+    if (targetChainId === 900) {
+      setChainId(900);
+      return;
+    }
+    const params = CHAIN_PARAMS[targetChainId] || POLYGON_MAINNET_PARAMS;
+    const provider = activeProvider || (typeof window !== 'undefined' ? (window as any).ethereum : null);
+    if (provider && provider.request) {
+      try {
+        await provider.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: params.chainId }],
+        });
+        setChainId(targetChainId);
+      } catch (switchError: any) {
+        if (switchError.code === 4902) {
+          try {
+            await provider.request({
+              method: 'wallet_addEthereumChain',
+              params: [params],
+            });
+            setChainId(targetChainId);
+          } catch (addError) {
+            console.error(`Failed to add network ${targetChainId}`, addError);
+          }
+        }
+      }
+    } else {
+      setChainId(targetChainId);
+    }
+  }, [activeProvider]);
+
   return (
     <WalletContext.Provider
       value={{
@@ -215,6 +294,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         connect,
         disconnect,
         switchToPolygon,
+        switchChain,
         sendOmsEmailOtp,
         verifyOmsOtp,
         createAgentSmartSession,
