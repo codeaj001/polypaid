@@ -4,6 +4,7 @@ import { useWallet } from '@/context/WalletContext';
 import { ConnectModal } from './ConnectModal';
 import { Button } from '@/components/ui';
 import { formatAmountDisplay } from '@/lib/amount';
+import { executeSolanaTransfer } from '@/lib/solana';
 import clsx from 'clsx';
 
 interface TrailsPayWidgetProps {
@@ -104,22 +105,26 @@ function InteractivePayWidget(props: TrailsPayWidgetProps) {
       if (isSolanaToken) {
         const solProvider =
           typeof window !== 'undefined'
-            ? (window as any).phantom?.solana || (window as any).solana || (window as any).solflare
+            ? (window as any).solflare || (window as any).phantom?.solana || (window as any).solana
             : null;
 
         if (solProvider) {
           try {
-            const resp = await solProvider.connect();
-            const payerKey = (resp?.publicKey || solProvider.publicKey)?.toString() || address;
-            txHash = `sol_${payerKey.slice(0, 8)}_${Math.random().toString(36).slice(2, 12)}`;
+            const solAmount = Number(props.toAmount) || 0.05;
+            txHash = await executeSolanaTransfer({
+              solProvider,
+              fromAddress: address,
+              toAddress: props.toAddress,
+              solAmount,
+            });
           } catch (solErr: any) {
             setStage('idle');
-            setError(solErr?.message || 'Solana transaction was cancelled in your wallet.');
+            setError(solErr?.message || 'Transaction was cancelled in your Solflare wallet.');
             return;
           }
         } else {
           setStage('idle');
-          setError('No Solana wallet (Phantom or Solflare) detected. Please connect a Solana wallet to pay with SOL.');
+          setError('No Solana wallet (Solflare or Phantom) detected. Please connect a Solana wallet to pay with SOL.');
           return;
         }
       } else {
