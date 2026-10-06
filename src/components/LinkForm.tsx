@@ -16,7 +16,7 @@ import {
 import { formatWithCommas, formatUserFriendlyError } from '@/lib/amount';
 
 export function LinkForm() {
-  const { address, isConnected, chainId, switchToPolygon } = useWallet();
+  const { address, isConnected, isAuthenticated, chainId, authenticate, switchToPolygon } = useWallet();
 
   const [amount, setAmount] = useState('');
   const [memo, setMemo] = useState('');
@@ -58,14 +58,41 @@ export function LinkForm() {
       }
     }
 
+    if (!isAuthenticated) {
+      try {
+        await authenticate();
+      } catch (authError: any) {
+        setError(authError?.message || 'Sign the wallet message to create a payment link.');
+        return;
+      }
+    }
+
     const numericAmount = Number(amount.replace(/,/g, ''));
-    if (!numericAmount || numericAmount <= 0) {
-      setError('Amount must be a positive number');
+    const rawAmount = amount.replace(/,/g, '');
+    if (!/^\d+(\.\d{1,6})?$/.test(rawAmount) || !numericAmount || numericAmount <= 0 || numericAmount > 1_000_000) {
+      setError('Amount must be between 0.000001 and 1,000,000 USDC with at most 6 decimal places');
       return;
     }
     if (!memo.trim()) {
       setError('Add a short description of what this is for');
       return;
+    }
+    if (memo.trim().length > 200) {
+      setError('Description must be 200 characters or fewer');
+      return;
+    }
+    const expiryDays = expiresInDays ? Number(expiresInDays) : undefined;
+    if (expiryDays !== undefined && (!Number.isInteger(expiryDays) || expiryDays < 1 || expiryDays > 365)) {
+      setError('Expiry must be a whole number between 1 and 365 days');
+      return;
+    }
+    if (redirectUrl.trim()) {
+      try {
+        if (new URL(redirectUrl.trim()).protocol !== 'https:') throw new Error();
+      } catch {
+        setError('Success redirect must be a valid HTTPS URL');
+        return;
+      }
     }
 
     setSubmitting(true);
@@ -74,7 +101,7 @@ export function LinkForm() {
         amount: numericAmount,
         memo: memo.trim(),
         invoiceRef: invoiceRef.trim() || undefined,
-        expiresInDays: expiresInDays ? Number(expiresInDays) : undefined,
+        expiresInDays: expiryDays,
         redirectUrl: redirectUrl.trim() || undefined,
         recipientAddress: address,
       });
@@ -139,7 +166,8 @@ export function LinkForm() {
             <Input
               label="Expires in (days)"
               type="number"
-              min={0}
+              min={1}
+              max={365}
               placeholder="e.g., 30"
               value={expiresInDays}
               onChange={(e) => setExpiresInDays(e.target.value)}
@@ -222,7 +250,9 @@ export function LinkForm() {
                   ? 'Connect Polygon EVM wallet'
                   : !isPolygon
                     ? 'Switch to Polygon to generate link'
-                    : 'Generate link & QR'}
+                    : !isAuthenticated
+                      ? 'Sign in & generate link'
+                      : 'Generate link & QR'}
           </Button>
         </form>
 

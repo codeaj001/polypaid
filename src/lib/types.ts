@@ -47,5 +47,5 @@ export interface DashboardStats {
   totalReceivedUsd: number;
   activeLinks: number;
   conversionRate: number;
-  avgSettleSeconds: number;
+  avgSettleSeconds: number | null;
 }

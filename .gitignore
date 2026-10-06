@@ -1,6 +1,5 @@
 # Dependencies
 node_modules/
-package-lock.json
 
 # Environment & Secrets
 .env
@@ -9,13 +8,16 @@ package-lock.json
 .env.production
 .env.development
 
-# Supabase Local Files
-supabase/
+# Supabase generated/local state (schemas and Edge Functions are source code)
+supabase/.branches/
+supabase/.temp/
+supabase/functions/.env
 
 # Production Build Output
 dist/
 dist-ssr/
 *.tsbuildinfo
+package-lock.json
 
 # Logs & System Files
 *.log
@@ -25,6 +27,10 @@ yarn-error.log*
 .DS_Store
 .vscode/
 .idea/
+.github/
 
 # Others
 brand_designs/
+docs/
+supabase/
+tests/

@@ -4,7 +4,16 @@ import { ConnectModal } from './ConnectModal';
 import { Badge, Button, IconWallet, IconWarning } from '@/components/ui';
 
 export function WalletConnectButton() {
-  const { address, chainId, isConnected, authMethod, disconnect, switchToPolygon } = useWallet();
+  const {
+    address,
+    chainId,
+    isConnected,
+    isAuthenticated,
+    authLoading,
+    authenticate,
+    disconnect,
+    switchToPolygon,
+  } = useWallet();
   const [showConnectModal, setShowConnectModal] = useState(false);
 
   const isEvm = isEvmAddress(address);
@@ -23,14 +32,17 @@ export function WalletConnectButton() {
             <IconWarning className="h-3.5 w-3.5" />
             Switch to Polygon
           </Button>
+        ) : !isAuthenticated ? (
+          <Button variant="secondary" size="sm" onClick={authenticate} disabled={authLoading}>
+            {authLoading ? 'Signing in…' : 'Sign in'}
+          </Button>
         ) : null}
 
         <div className="inline-flex items-center gap-2 rounded-full border border-blue-mid bg-blue-dim px-3.5 py-2 font-mono text-[12px] text-blue">
           <span className="h-1.5 w-1.5 rounded-full bg-blue" />
           <span>{shortAddress(address)}</span>
           {!isEvm && <Badge tone="warn">Solana</Badge>}
-          {authMethod === 'oms-email' && <Badge tone="blue">OMS 7702</Badge>}
-          {authMethod === 'oms-agent' && <Badge tone="blue">Agent</Badge>}
+          {isAuthenticated && <Badge tone="good">Verified</Badge>}
           <button
             type="button"
             onClick={disconnect}

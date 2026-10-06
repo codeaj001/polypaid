@@ -16,21 +16,21 @@ import {
 } from '@/components/ui';
 
 export function Dashboard() {
-  const { address, isConnected } = useWallet();
+  const { isConnected, isAuthenticated, authLoading, authenticate } = useWallet();
   const [links, setLinks] = useState<PaymentLink[]>([]);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [showConnectModal, setShowConnectModal] = useState(false);
 
   useEffect(() => {
-    if (!isConnected) {
+    if (!isAuthenticated) {
       setLoading(false);
       return;
     }
     let cancelled = false;
     setLoading(true);
     (async () => {
-      const [l, s] = await Promise.all([listLinks(address), getStats(address)]);
+      const [l, s] = await Promise.all([listLinks(), getStats()]);
       if (!cancelled) {
         setLinks(l);
         setStats(s);
@@ -40,7 +40,7 @@ export function Dashboard() {
     return () => {
       cancelled = true;
     };
-  }, [isConnected, address]);
+  }, [isAuthenticated]);
 
   return (
     <>
@@ -51,7 +51,7 @@ export function Dashboard() {
           title="Your links"
           description="All amounts settle as USDC on Polygon."
           action={
-            isConnected ? (
+            isAuthenticated ? (
               <Button to="/create" size="sm">
                 <IconPlus className="h-4 w-4" />
                 New link
@@ -60,14 +60,17 @@ export function Dashboard() {
           }
         />
 
-        {!isConnected ? (
+        {!isAuthenticated ? (
           <EmptyState
             icon={<IconLock className="h-6 w-6" />}
-            title="Connect to view your dashboard"
-            description="Connect your wallet to access payment history, track USDC settlements, and manage agentic smart sessions."
+            title={isConnected ? 'Sign in to view your dashboard' : 'Connect to view your dashboard'}
+            description="Wallet ownership must be verified with a signed message before payment links and settlement history are shown."
             action={
-              <Button onClick={() => setShowConnectModal(true)}>
-                Connect wallet
+              <Button
+                disabled={authLoading}
+                onClick={() => isConnected ? authenticate().catch(() => {}) : setShowConnectModal(true)}
+              >
+                {authLoading ? 'Checking session…' : isConnected ? 'Sign in with wallet' : 'Connect wallet'}
               </Button>
             }
           />
@@ -85,8 +88,8 @@ export function Dashboard() {
               <StatCard label="Conversion" value={`${stats.conversionRate}%`} delta="paid rate" />
               <StatCard
                 label="Avg. settle time"
-                value={`${stats.avgSettleSeconds}s`}
-                delta="via Trails routing"
+                value={stats.avgSettleSeconds === null ? '—' : `${stats.avgSettleSeconds}s`}
+                delta={stats.avgSettleSeconds === null ? 'No settled payments yet' : 'verified settlements'}
                 deltaGood={false}
               />
             </div>

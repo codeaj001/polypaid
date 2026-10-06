@@ -1,13 +1,11 @@
 import { useEffect, useState, ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
 import { PaymentLink } from '@/lib/types';
-import { getLinkBySlug, recordAttempt, markPaidByIntentOptimistic } from '@/lib/store';
-import { getPolygonscanTxUrl } from '@/lib/trails';
+import { getLinkBySlug, recordAttempt, verifyPaymentSession } from '@/lib/store';
 import { TrailsPayWidget } from '@/components/TrailsPayWidget';
 import { QRCodeModal } from '@/components/QRCodeModal';
-import { AgentPayModal } from '@/components/AgentPayModal';
 import { useLinkStatus } from '@/hooks/useLinkStatus';
-import { Badge, IconAgent, IconCheck, IconExternal, IconQr, LogoMark, Skeleton } from '@/components/ui';
+import { Badge, IconCheck, IconQr, LogoMark, Skeleton } from '@/components/ui';
 import { NotFound } from './NotFound';
 
 import { formatAmountDisplay } from '@/lib/amount';
@@ -42,11 +40,11 @@ export function PayPage() {
 }
 
 function PayPageContent({ link }: { link: PaymentLink }) {
-  const status = useLinkStatus(link.id, link.slug, computeEffectiveStatus(link));
-  const [receiptTx, setReceiptTx] = useState<string | null>(null);
-  const [pendingIntentId, setPendingIntentId] = useState<string | null>(null);
+  const status = useLinkStatus(link.id, link.slug, computeEffectiveStatus(link), link.expiresAt);
+  const [submittedSessionId, setSubmittedSessionId] = useState<string | null>(null);
+  const [verificationError, setVerificationError] = useState<string | null>(null);
+  const [attemptError, setAttemptError] = useState<string | null>(null);
   const [showQr, setShowQr] = useState(false);
-  const [showAgent, setShowAgent] = useState(false);
   const [countdown, setCountdown] = useState(3);
   const formattedAmount = formatAmountDisplay(link.amount);
 
@@ -79,7 +77,7 @@ function PayPageContent({ link }: { link: PaymentLink }) {
 
   if (status === 'paid') {
     return (
-      <Shell statusLabel="Paid" statusGood onQrClick={() => setShowQr(true)} onAgentClick={() => setShowAgent(true)}>
+      <Shell statusLabel="Paid" statusGood onQrClick={() => setShowQr(true)}>
         <Avatar />
         <div className="mb-1 text-sm text-ink-soft">
           Paid to <b className="text-ink">@{link.creatorHandle}</b>
@@ -91,21 +89,8 @@ function PayPageContent({ link }: { link: PaymentLink }) {
         <div className="rounded-2xl border border-good/20 bg-good-dim py-4 text-center text-sm font-semibold text-good shadow-soft">
           <span className="inline-flex items-center justify-center gap-2">
             <IconCheck className="h-4 w-4" />
-            Payment confirmed & optimistic receipt issued
+            Payment settlement verified
           </span>
-          {receiptTx && (
-            <div className="mt-1 font-mono text-xs">
-              <a
-                href={getPolygonscanTxUrl(receiptTx)}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1 underline underline-offset-2 hover:opacity-80"
-              >
-                View on Polygonscan
-                <IconExternal className="h-3 w-3" />
-              </a>
-            </div>
-          )}
         </div>
         {link.redirectUrl && (
           <div className="mt-5 rounded-2xl border border-blue-mid/40 bg-blue-dim/40 p-4 text-center animate-fade-up">
@@ -137,13 +122,12 @@ function PayPageContent({ link }: { link: PaymentLink }) {
           isOpen={showQr}
           onClose={() => setShowQr(false)}
         />
-        <AgentPayModal link={link} isOpen={showAgent} onClose={() => setShowAgent(false)} />
       </Shell>
     );
   }
 
   return (
-    <Shell statusLabel="Awaiting payment" onQrClick={() => setShowQr(true)} onAgentClick={() => setShowAgent(true)}>
+    <Shell statusLabel="Awaiting payment" onQrClick={() => setShowQr(true)}>
       <Avatar />
       <div className="mb-1 text-sm text-ink-soft">
         Payment request from <b className="text-ink">@{link.creatorHandle}</b>
@@ -159,17 +143,46 @@ function PayPageContent({ link }: { link: PaymentLink }) {
         toChainId={link.settlementChainId}
         toToken={link.settlementToken}
         toAmount={String(link.amount)}
-        onIntentCreated={async (intent) => {
-          setPendingIntentId(intent.id);
-          await recordAttempt(link.id, intent.fromAddress, intent.id).catch(() => {});
+        onPaymentStarted={async (intent) => {
+          setAttemptError(null);
+          try {
+            await recordAttempt(link.id, intent.fromAddress, intent.id);
+          } catch (error: any) {
+            setAttemptError(error?.message || 'The payment session could not be registered. Do not submit payment yet.');
+          }
         }}
-        onSuccess={async (result) => {
-          setReceiptTx(result.txHash);
-          if (pendingIntentId) {
-            await markPaidByIntentOptimistic(pendingIntentId, result.txHash, null).catch(() => {});
+        onPaymentSubmitted={async (payment) => {
+          setSubmittedSessionId(payment.id);
+          setVerificationError(null);
+          try {
+            // Register again in case the provider completed before the start
+            // callback's database request finished. The RPC is idempotent.
+            await recordAttempt(link.id, '', payment.id);
+            const result = await verifyWithRetry(link.id, payment.id);
+            if (!result.verified) setVerificationError('Settlement is still being verified. This page will update automatically.');
+          } catch (error: any) {
+            setVerificationError(error?.message || 'Settlement verification is temporarily unavailable.');
           }
         }}
       />
+
+      {attemptError && (
+        <div className="mt-3 rounded-xl border border-danger/20 bg-danger-dim p-3 text-center text-xs text-danger">
+          {attemptError}
+        </div>
+      )}
+
+      {submittedSessionId && (
+        <div className="mt-4 rounded-xl border border-blue-mid/40 bg-blue-dim p-3 text-center text-xs text-blue">
+          Payment submitted. Waiting for server-side settlement verification…
+        </div>
+      )}
+
+      {verificationError && (
+        <div className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-center text-xs text-ink-soft">
+          {verificationError}
+        </div>
+      )}
 
       <QRCodeModal
         url={window.location.href}
@@ -177,9 +190,22 @@ function PayPageContent({ link }: { link: PaymentLink }) {
         isOpen={showQr}
         onClose={() => setShowQr(false)}
       />
-      <AgentPayModal link={link} isOpen={showAgent} onClose={() => setShowAgent(false)} />
     </Shell>
   );
+}
+
+async function verifyWithRetry(linkId: string, sessionId: string) {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      const result = await verifyPaymentSession(linkId, sessionId);
+      if (result.verified) return result;
+    } catch (error) {
+      lastError = error;
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 2 ** attempt * 1000));
+  }
+  throw lastError instanceof Error ? lastError : new Error('Settlement verification timed out.');
 }
 
 function computeEffectiveStatus(link: PaymentLink) {
@@ -192,13 +218,11 @@ function Shell({
   statusLabel,
   statusGood,
   onQrClick,
-  onAgentClick,
 }: {
   children: ReactNode;
   statusLabel?: string;
   statusGood?: boolean;
   onQrClick?: () => void;
-  onAgentClick?: () => void;
 }) {
   return (
     <div className="flex justify-center py-10 sm:py-14 animate-fade-up">
@@ -220,17 +244,6 @@ function Shell({
               >
                 <IconQr className="h-3.5 w-3.5" />
                 QR
-              </button>
-            )}
-            {onAgentClick && (
-              <button
-                type="button"
-                onClick={onAgentClick}
-                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line bg-paper px-2.5 font-mono text-[10.5px] text-ink-soft transition-colors duration-200 hover:border-blue hover:text-blue"
-                title="Agent x402 Spec"
-              >
-                <IconAgent className="h-3.5 w-3.5" />
-                x402
               </button>
             )}
             {statusLabel && <Badge tone={statusGood ? 'good' : 'blue'}>{statusLabel}</Badge>}

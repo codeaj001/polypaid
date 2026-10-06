@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
-import { omsWalletService, OmsUserSession, OmsSmartSession, CustodyModel } from '@/services/omsWalletService';
+import { getSupabaseClient } from '@/lib/supabase-client';
 
 export const POLYGON_MAINNET_PARAMS = {
   chainId: '0x89', // 137
@@ -55,24 +55,18 @@ export const CHAIN_PARAMS: Record<number, { chainId: string; chainName: string; 
   },
 };
 
-export type AuthMethod = 'browser' | 'oms-email' | 'oms-agent';
-
 interface WalletState {
   address: string | null;
   chainId: number | null;
+  userId: string | null;
   isConnected: boolean;
-  authMethod: AuthMethod | null;
-  custodyModel: CustodyModel | null;
-  omsUser: OmsUserSession | null;
-  smartSessions: OmsSmartSession[];
+  isAuthenticated: boolean;
+  authLoading: boolean;
   connect: (targetProvider?: any) => Promise<void>;
-  disconnect: () => void;
+  authenticate: () => Promise<void>;
+  disconnect: () => Promise<void>;
   switchToPolygon: () => Promise<void>;
   switchChain: (targetChainId: number) => Promise<void>;
-  sendOmsEmailOtp: (email: string) => Promise<{ challengeId: string }>;
-  verifyOmsOtp: (email: string, code: string) => Promise<void>;
-  createAgentSmartSession: (dailyLimitUsdc: number, expiryDays?: number) => Promise<OmsSmartSession>;
-  revokeAgentSmartSession: (sessionId: string) => Promise<void>;
 }
 
 const WalletContext = createContext<WalletState | null>(null);
@@ -80,23 +74,28 @@ const WalletContext = createContext<WalletState | null>(null);
 export function WalletProvider({ children }: { children: ReactNode }) {
   const [address, setAddress] = useState<string | null>(null);
   const [chainId, setChainId] = useState<number | null>(null);
-  const [authMethod, setAuthMethod] = useState<AuthMethod | null>(null);
-  const [custodyModel, setCustodyModel] = useState<CustodyModel | null>(null);
-  const [omsUser, setOmsUser] = useState<OmsUserSession | null>(null);
-  const [smartSessions, setSmartSessions] = useState<OmsSmartSession[]>([]);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [activeProvider, setActiveProvider] = useState<any>(null);
 
-  // Synchronize OMS session on mount
   useEffect(() => {
-    const existingOms = omsWalletService.getActiveUserSession();
-    if (existingOms) {
-      setAddress(existingOms.address);
-      setOmsUser(existingOms);
-      setAuthMethod('oms-email');
-      setCustodyModel(existingOms.custodyModel);
-      setChainId(137);
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      setAuthLoading(false);
+      return;
     }
-    setSmartSessions(omsWalletService.getSmartSessions());
+
+    supabase.auth.getSession().then(({ data }) => {
+      setUserId(data.session?.user.id ?? null);
+      setAuthLoading(false);
+    });
+
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUserId(session?.user.id ?? null);
+      setAuthLoading(false);
+    });
+
+    return () => data.subscription.unsubscribe();
   }, []);
 
   // Synchronize window.ethereum or activeProvider state if available
@@ -105,9 +104,13 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     if (!provider) return;
 
     const handleAccountsChanged = (accounts: string[]) => {
-      if (accounts.length > 0 && authMethod === 'browser') {
+      if (accounts.length > 0) {
+        if (address && accounts[0].toLowerCase() !== address.toLowerCase()) {
+          getSupabaseClient()?.auth.signOut();
+          setUserId(null);
+        }
         setAddress(accounts[0]);
-      } else if (authMethod === 'browser') {
+      } else {
         setAddress(null);
       }
     };
@@ -123,7 +126,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       provider.removeListener?.('accountsChanged', handleAccountsChanged);
       provider.removeListener?.('chainChanged', handleChainChanged);
     };
-  }, [authMethod, activeProvider]);
+  }, [activeProvider, address]);
 
   const connect = useCallback(async (targetProvider?: any) => {
     const provider =
@@ -145,8 +148,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
           setActiveProvider(provider);
           setAddress(accounts[0]);
           setChainId(parseInt(hexChainId, 16));
-          setAuthMethod('browser');
-          setCustodyModel('non-custodial');
+          setUserId(null);
+          await getSupabaseClient()?.auth.signOut();
           return;
         } catch (evmErr: any) {
           // If the provider rejects eth_requestAccounts (e.g. Solana-only provider or mode), attempt Solana connect
@@ -158,8 +161,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
                 setActiveProvider(provider);
                 setAddress(solAddress);
                 setChainId(900);
-                setAuthMethod('browser');
-                setCustodyModel('non-custodial');
+                setUserId(null);
+                await getSupabaseClient()?.auth.signOut();
                 return;
               }
             }
@@ -176,53 +179,54 @@ export function WalletProvider({ children }: { children: ReactNode }) {
           setActiveProvider(provider);
           setAddress(solAddress);
           setChainId(900);
-          setAuthMethod('browser');
-          setCustodyModel('non-custodial');
+          setUserId(null);
+          await getSupabaseClient()?.auth.signOut();
           return;
         }
       }
     }
 
-    throw new Error('No browser Web3 extension found. Please install a Web3 wallet or use Polygon OMS Email OTP.');
+    throw new Error('No browser Web3 wallet found. Install a supported wallet or open this page in a wallet browser.');
   }, []);
 
-  const sendOmsEmailOtp = useCallback(async (email: string) => {
-    return await omsWalletService.sendEmailOtp(email);
-  }, []);
+  const authenticate = useCallback(async () => {
+    if (!activeProvider || !address || !isEvmAddress(address)) {
+      throw new Error('Connect an Ethereum-compatible wallet before signing in.');
+    }
 
-  const verifyOmsOtp = useCallback(async (email: string, code: string) => {
-    const session = await omsWalletService.verifyEmailOtp(email, code);
-    setAddress(session.address);
-    setOmsUser(session);
-    setAuthMethod('oms-email');
-    setCustodyModel('non-custodial');
-    setChainId(137);
-  }, []);
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      throw new Error('Wallet authentication is not configured.');
+    }
 
-  const createAgentSmartSession = useCallback(async (dailyLimitUsdc: number, expiryDays = 30) => {
-    const walletId = omsUser?.walletId || 'wlet_oms_live';
-    const smartSession = await omsWalletService.createSmartSession(walletId, {
-      dailyLimitUsdc,
-      expiryDays,
-    });
-    setSmartSessions(omsWalletService.getSmartSessions());
-    return smartSession;
-  }, [omsUser]);
+    setAuthLoading(true);
+    try {
+      const signInWithWeb3 = (supabase.auth as any).signInWithWeb3;
+      if (typeof signInWithWeb3 !== 'function') {
+        throw new Error('Update project dependencies to enable Supabase Web3 authentication.');
+      }
+      const { data, error } = await signInWithWeb3.call(supabase.auth, {
+        chain: 'ethereum',
+        wallet: activeProvider,
+        statement: 'Sign in to PolyPaid to create and manage payment links.',
+      });
+      if (error) throw error;
+      if (!data?.user?.id) throw new Error('Wallet signature could not be verified.');
+      setUserId(data.user.id);
+    } finally {
+      setAuthLoading(false);
+    }
+  }, [activeProvider, address]);
 
-  const revokeAgentSmartSession = useCallback(async (sessionId: string) => {
-    await omsWalletService.revokeSmartSession(sessionId);
-    setSmartSessions(omsWalletService.getSmartSessions());
-  }, []);
-
-  const disconnect = useCallback(() => {
-    omsWalletService.logout();
+  const disconnect = useCallback(async () => {
+    const supabase = getSupabaseClient();
+    if (supabase) await supabase.auth.signOut();
+    activeProvider?.disconnect?.();
     setActiveProvider(null);
     setAddress(null);
     setChainId(null);
-    setOmsUser(null);
-    setAuthMethod(null);
-    setCustodyModel(null);
-  }, []);
+    setUserId(null);
+  }, [activeProvider]);
 
   const switchToPolygon = useCallback(async () => {
     const provider = activeProvider || (typeof window !== 'undefined' ? (window as any).ethereum : null);
@@ -286,19 +290,15 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       value={{
         address,
         chainId,
+        userId,
         isConnected: !!address,
-        authMethod,
-        custodyModel,
-        omsUser,
-        smartSessions,
+        isAuthenticated: !!userId,
+        authLoading,
         connect,
+        authenticate,
         disconnect,
         switchToPolygon,
         switchChain,
-        sendOmsEmailOtp,
-        verifyOmsOtp,
-        createAgentSmartSession,
-        revokeAgentSmartSession,
       }}
     >
       {children}
