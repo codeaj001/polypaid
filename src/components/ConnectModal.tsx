@@ -1,7 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useWallet } from '@/context/WalletContext';
-import { KNOWN_WALLETS, WalletInfo, EIP6963ProviderDetail } from '@/lib/walletDiscovery';
-import { isMobile, getWalletDeepLink } from '@/lib/mobile';
+import {
+  refreshInstalledEvmWallets,
+  subscribeToInstalledEvmWallets,
+  WalletInfo,
+} from '@/lib/walletDiscovery';
 import { Modal } from '@/components/ui';
 
 interface ConnectModalProps {
@@ -12,61 +15,40 @@ interface ConnectModalProps {
 export function ConnectModal({ isOpen, onClose }: ConnectModalProps) {
   const { connect } = useWallet();
   const [wallets, setWallets] = useState<WalletInfo[]>([]);
+  const [query, setQuery] = useState('');
+  const [detecting, setDetecting] = useState(true);
   const [loadingWalletId, setLoadingWalletId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const onMobileDevice = isMobile();
 
   useEffect(() => {
     if (!isOpen) return;
+    setDetecting(true);
+    setError(null);
+    setQuery('');
 
-    const detected = new Map<string, WalletInfo>();
-    KNOWN_WALLETS.forEach((wallet) => {
-      const installed = wallet.checkInstalled();
-      detected.set(wallet.id, {
-        id: wallet.id,
-        name: wallet.name,
-        rdns: wallet.rdns,
-        icon: wallet.icon,
-        installUrl: wallet.installUrl,
-        isInstalled: installed,
-        provider: installed ? wallet.getProvider() : undefined,
-      });
+    const unsubscribe = subscribeToInstalledEvmWallets((detected) => {
+      setWallets(detected);
+      if (detected.length > 0) setDetecting(false);
     });
+    const detectionWindow = window.setTimeout(() => setDetecting(false), 500);
+    refreshInstalledEvmWallets();
 
-    const refresh = () => setWallets(Array.from(detected.values()));
-    const handleAnnounce = (event: Event) => {
-      const { info, provider } = (event as CustomEvent<EIP6963ProviderDetail>).detail;
-      const known = KNOWN_WALLETS.find((wallet) => wallet.rdns === info.rdns);
-      const id = known?.id || info.rdns || info.uuid;
-      detected.set(id, {
-        id,
-        name: info.name,
-        rdns: info.rdns,
-        icon: info.icon || known?.icon || 'W',
-        installUrl: known?.installUrl || `https://www.google.com/search?q=${encodeURIComponent(`${info.name} wallet`)}`,
-        isInstalled: true,
-        provider,
-      });
-      refresh();
+    return () => {
+      unsubscribe();
+      window.clearTimeout(detectionWindow);
     };
-
-    window.addEventListener('eip6963:announceProvider', handleAnnounce);
-    window.dispatchEvent(new Event('eip6963:requestProvider'));
-    refresh();
-    return () => window.removeEventListener('eip6963:announceProvider', handleAnnounce);
   }, [isOpen]);
+
+  const filteredWallets = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) return wallets;
+    return wallets.filter(
+      (wallet) => wallet.name.toLowerCase().includes(normalized) || wallet.rdns?.toLowerCase().includes(normalized)
+    );
+  }, [query, wallets]);
 
   async function selectWallet(wallet: WalletInfo) {
     setError(null);
-    if (!wallet.isInstalled || !wallet.provider) {
-      if (onMobileDevice) {
-        window.location.href = getWalletDeepLink(wallet.id);
-      } else {
-        window.open(wallet.installUrl, '_blank', 'noopener,noreferrer');
-      }
-      return;
-    }
-
     setLoadingWalletId(wallet.id);
     try {
       await connect(wallet.provider);
@@ -78,23 +60,44 @@ export function ConnectModal({ isOpen, onClose }: ConnectModalProps) {
     }
   }
 
+  function refresh() {
+    setDetecting(true);
+    setError(null);
+    refreshInstalledEvmWallets();
+    window.setTimeout(() => setDetecting(false), 500);
+  }
+
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
       title="Connect wallet"
-      description={onMobileDevice ? 'Open this payment in a supported wallet app.' : 'Select an installed wallet or install one to continue.'}
+      description="Installed Polygon-compatible browser wallets are detected automatically."
       size="md"
       className="max-w-[420px]"
     >
       {error && (
-        <div className="mb-4 rounded-xl border border-danger/20 bg-danger-dim p-3 text-xs text-danger">
+        <div role="alert" className="mb-4 rounded-xl border border-danger/20 bg-danger-dim p-3 text-xs text-danger">
           {error}
         </div>
       )}
 
-      <div className="space-y-1.5">
-        {wallets.map((wallet) => (
+      {wallets.length > 1 && (
+        <label className="mb-3 block">
+          <span className="sr-only">Filter installed wallets</span>
+          <input
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Filter installed wallets…"
+            autoComplete="off"
+            className="w-full rounded-xl border border-line bg-paper px-3.5 py-2.5 text-sm text-ink outline-none transition-colors placeholder:text-ink-soft focus:border-blue"
+          />
+        </label>
+      )}
+
+      <div className="space-y-1.5" aria-live="polite">
+        {filteredWallets.map((wallet) => (
           <button
             key={wallet.id}
             type="button"
@@ -102,30 +105,54 @@ export function ConnectModal({ isOpen, onClose }: ConnectModalProps) {
             onClick={() => selectWallet(wallet)}
             className="group flex w-full items-center justify-between rounded-2xl border border-line/80 bg-paper/60 p-3 transition-all duration-200 hover:border-blue hover:bg-blue-dim/40 disabled:opacity-60"
           >
-            <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-line bg-surface shadow-soft">
-                {wallet.icon.startsWith('data:') || wallet.icon.startsWith('http') ? (
-                  <img src={wallet.icon} alt="" className="h-5 w-5 object-contain" />
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-line bg-surface shadow-soft">
+                {wallet.icon.startsWith('data:image/') || wallet.icon.startsWith('https://') ? (
+                  <img src={wallet.icon} alt="" className="h-6 w-6 object-contain" />
                 ) : (
                   <span className="font-semibold">{wallet.icon}</span>
                 )}
               </div>
-              <div className="text-left">
-                <div className="text-sm font-semibold text-ink group-hover:text-blue">{wallet.name}</div>
-                <div className="text-[11px] text-ink-soft">
-                  {wallet.isInstalled ? 'Detected' : onMobileDevice ? 'Open wallet app' : 'Not installed'}
+              <div className="min-w-0 text-left">
+                <div className="truncate text-sm font-semibold text-ink group-hover:text-blue">{wallet.name}</div>
+                <div className="truncate text-[11px] text-ink-soft">
+                  {wallet.rdns || 'Legacy browser provider'} · Installed
                 </div>
               </div>
             </div>
-            <span className="font-mono text-xs font-semibold text-blue">
-              {loadingWalletId === wallet.id ? 'Connecting…' : wallet.isInstalled ? 'Connect →' : onMobileDevice ? 'Open ↗' : 'Install ↗'}
+            <span className="ml-3 shrink-0 font-mono text-xs font-semibold text-blue">
+              {loadingWalletId === wallet.id ? 'Connecting…' : 'Connect →'}
             </span>
           </button>
         ))}
+
+        {!detecting && wallets.length === 0 && (
+          <div className="rounded-2xl border border-dashed border-line bg-paper/50 px-5 py-7 text-center">
+            <div className="text-sm font-semibold text-ink">No compatible browser wallet detected</div>
+            <p className="mt-1.5 text-xs leading-relaxed text-ink-soft">
+              Install or enable an EVM wallet extension, allow it on this site, then refresh detection.
+            </p>
+            <button type="button" onClick={refresh} className="mt-4 text-xs font-semibold text-blue hover:underline">
+              Detect again
+            </button>
+          </div>
+        )}
+
+        {!detecting && wallets.length > 0 && filteredWallets.length === 0 && (
+          <div className="rounded-xl border border-line bg-paper p-4 text-center text-xs text-ink-soft">
+            No installed wallet matches “{query}”.
+          </div>
+        )}
+
+        {detecting && wallets.length === 0 && (
+          <div className="rounded-2xl border border-line bg-paper p-6 text-center text-sm text-ink-soft">
+            Detecting installed wallets…
+          </div>
+        )}
       </div>
 
       <p className="mt-4 text-center font-mono text-[10.5px] leading-relaxed text-ink-soft">
-        Email OTP and smart-session login are unavailable until a production wallet provider is connected.
+        Detection uses EIP-6963 with a legacy EIP-1193 fallback. Connecting always requires your approval.
       </p>
     </Modal>
   );
